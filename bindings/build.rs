@@ -8,7 +8,7 @@ fn main() {
             LPARAM,
             CallNextHookEx,
             KBDLLHOOKSTRUCT,
-            DispatchMessageA, 
+            DispatchMessageA,
             GetMessageA,
             MSG,
         },
