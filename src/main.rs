@@ -1,7 +1,9 @@
 mod interop;
 
 use bindings::windows::{
-    system::{DispatcherQueue, DispatcherQueueController, DispatcherQueueHandler},
+    application_model::data_transfer::{Clipboard, DataPackage, DataPackageOperation},
+    storage::KnownFolders,
+    system::{DispatcherQueue, DispatcherQueueHandler},
     win32::{
         keyboard_and_mouse_input::GetKeyState,
         system_services::{HINSTANCE, LRESULT, VK_LWIN, WH_KEYBOARD_LL, WM_KEYUP},
@@ -13,9 +15,13 @@ use bindings::windows::{
     },
 };
 use interop::create_dispatcher_queue_controller_for_current_thread;
-use std::sync::{
-    mpsc::{channel, Receiver, Sender},
-    Once,
+use std::fs::{read_dir, File};
+use std::path::Path;
+use std::time::SystemTime;
+use std::{
+    io::Read,
+    path::PathBuf,
+    sync::Once,
 };
 
 static mut MAIN_THREAD_QUEUE: Option<DispatcherQueue> = None;
@@ -34,7 +40,7 @@ impl Drop for HHook {
 
 fn main() -> windows::Result<()> {
     unsafe {
-        RoInitialize(RO_INIT_TYPE::RO_INIT_MULTITHREADED).ok()?;
+        RoInitialize(RO_INIT_TYPE::RO_INIT_SINGLETHREADED).ok()?;
     }
 
     let controller = create_dispatcher_queue_controller_for_current_thread()?;
@@ -64,8 +70,66 @@ fn main() -> windows::Result<()> {
 }
 
 fn copy_code() -> windows::Result<()> {
-    println!("pressed!");
+    let documents_folder = KnownFolders::documents_library()?;
+    let save_folder = documents_folder
+        .get_folder_async("Warcraft III\\CustomMapData\\DRT1")?
+        .get()?;
+    let save_path = save_folder.path()?.to_string();
+    let save_path = Path::new(&save_path);
+    if !save_path.exists() {
+        println!(
+            "Save path \"{}\" does not exist!",
+            save_path.to_string_lossy()
+        );
+        return Ok(());
+    }
+    let code = find_code(&save_path).unwrap();
+    println!("Code found: {}", &code);
+
+    // copy the code to the clipboard
+    let package = DataPackage::new()?;
+    package.set_requested_operation(DataPackageOperation::Copy)?;
+    package.set_text(code)?;
+    Clipboard::set_content(package)?;
+    println!("Code copied to clipboard!");
+
     Ok(())
+}
+
+fn find_newest_file(path: &Path) -> std::io::Result<PathBuf> {
+    let mut result = None;
+    let mut newest = SystemTime::UNIX_EPOCH;
+    for entry in read_dir(path)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_file() {
+            let metadata = entry.metadata()?;
+            let modified = metadata.modified()?;
+            if modified > newest {
+                newest = modified;
+                result = Some(entry);
+            }
+        }
+    }
+    Ok(result.unwrap().path())
+}
+
+fn find_code(save_path: &Path) -> std::io::Result<String> {
+    let file_path = find_newest_file(save_path)?;
+    println!("Loading file \"{:#?}\"...", &file_path);
+    let contents = {
+        let mut contents = String::new();
+        let mut file = File::open(file_path)?;
+        file.read_to_string(&mut contents)?;
+        contents
+    };
+
+    let load_index = contents.find("-load").unwrap();
+    let temp = &contents[load_index..];
+    let quote_index = temp.find(" \"").unwrap();
+    let code = &temp[..quote_index];
+
+    Ok(code.to_string())
 }
 
 extern "system" fn hook_proc(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {

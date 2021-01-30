@@ -27,6 +27,12 @@ fn main() {
             RoInitialize,
             RO_INIT_TYPE,
         },
+        windows::application_model::data_transfer::{
+            DataPackage, DataPackageOperation, Clipboard,
+        },
+        windows::storage::{
+            StorageFolder, StorageFile, KnownFolders,
+        },
         windows::system::{
             DispatcherQueueController,
             DispatcherQueue,
