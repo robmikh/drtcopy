@@ -1,60 +1,38 @@
-mod interop;
+mod hotkey;
 
-use interop::create_dispatcher_queue_controller_for_current_thread;
+use hotkey::HotKey;
 use std::fs::{read_dir, File};
 use std::path::Path;
 use std::time::SystemTime;
-use std::{io::Read, path::PathBuf, sync::Once};
+use std::{io::Read, path::PathBuf};
+use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_CONTROL, MOD_SHIFT};
+use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
 use windows::{
-    core::{Handle, Result},
+    core::Result,
     ApplicationModel::DataTransfer::{Clipboard, DataPackage, DataPackageOperation},
     Storage::KnownFolders,
-    System::{DispatcherQueue, DispatcherQueueHandler},
     Win32::{
-        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::HWND,
         System::WinRT::{RoInitialize, RO_INIT_SINGLETHREADED},
-        UI::{
-            Input::KeyboardAndMouse::{GetKeyState, VK_LWIN},
-            WindowsAndMessaging::{
-                CallNextHookEx, DispatchMessageA, GetMessageA, SetWindowsHookExA,
-                UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYUP,
-            },
-        },
+        UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, MSG},
     },
 };
-
-static mut MAIN_THREAD_QUEUE: Option<DispatcherQueue> = None;
-static INIT: Once = Once::new();
-
-#[repr(transparent)]
-struct HHook(HHOOK);
-
-impl Drop for HHook {
-    fn drop(&mut self) {
-        unsafe {
-            UnhookWindowsHookEx(self.0).ok().unwrap();
-        }
-    }
-}
 
 fn main() -> Result<()> {
     unsafe {
         RoInitialize(RO_INIT_SINGLETHREADED)?;
     }
 
-    let controller = create_dispatcher_queue_controller_for_current_thread()?;
-    let queue = controller.DispatcherQueue()?;
-    INIT.call_once(|| unsafe {
-        MAIN_THREAD_QUEUE = Some(queue);
-    });
-
-    let _hook =
-        unsafe { HHook(SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc), HINSTANCE(0), 0).ok()?) };
+    // 0x4A is the J key
+    let _hot_key = HotKey::new(MOD_SHIFT | MOD_CONTROL, 0x4A)?;
 
     unsafe {
         let mut message = MSG::default();
-        while GetMessageA(&mut message, HWND(0), 0, 0).into() {
-            DispatchMessageA(&mut message);
+        while GetMessageW(&mut message, HWND(0), 0, 0).into() {
+            if message.message == WM_HOTKEY {
+                copy_code()?;
+            }
+            DispatchMessageW(&mut message);
         }
     }
 
@@ -122,35 +100,4 @@ fn find_code(save_path: &Path) -> std::io::Result<String> {
     let code = &temp[..quote_index];
 
     Ok(code.to_string())
-}
-
-extern "system" fn hook_proc(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
-    unsafe {
-        if code == 0 {
-            // w_param holds the identifier of the keyboard message
-            if w_param.0 as u32 == WM_KEYUP {
-                // l_param holds a pointer to a KBDLLHOOKSTRUCT struct
-                let keyboard_info: *mut KBDLLHOOKSTRUCT = std::mem::transmute(l_param);
-                let keyboard_info = keyboard_info.as_ref().unwrap();
-
-                // 0x4A is the J key
-                if keyboard_info.vkCode == 0x4A {
-                    // Check to see if the windows key is also down
-                    let key_state = GetKeyState(VK_LWIN.0 as i32);
-                    if key_state != 0 {
-                        // Signal the main thread to find and copy the new save code
-                        let main_thread_queue = MAIN_THREAD_QUEUE.clone().unwrap();
-                        main_thread_queue
-                            .TryEnqueue(DispatcherQueueHandler::new(move || -> Result<()> {
-                                copy_code()?;
-                                Ok(())
-                            }))
-                            .unwrap();
-                    }
-                }
-            }
-        }
-
-        return CallNextHookEx(HHOOK(0), code, w_param, l_param);
-    }
 }
