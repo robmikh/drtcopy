@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::SystemTime;
 use std::{io::Read, path::PathBuf, sync::Once};
 use windows::{
-    runtime::{Handle, Result},
+    core::{Handle, Result},
     ApplicationModel::DataTransfer::{Clipboard, DataPackage, DataPackageOperation},
     Storage::KnownFolders,
     System::{DispatcherQueue, DispatcherQueueHandler},
