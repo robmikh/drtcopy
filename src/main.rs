@@ -1,4 +1,5 @@
 mod hotkey;
+mod known_folders;
 
 use hotkey::HotKey;
 use std::fs::{read_dir, File};
@@ -10,13 +11,14 @@ use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
 use windows::{
     core::Result,
     ApplicationModel::DataTransfer::{Clipboard, DataPackage, DataPackageOperation},
-    Storage::KnownFolders,
     Win32::{
         Foundation::HWND,
         System::WinRT::{RoInitialize, RO_INIT_SINGLETHREADED},
         UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, MSG},
     },
 };
+
+use crate::known_folders::get_documents_folder;
 
 fn main() -> Result<()> {
     unsafe {
@@ -40,12 +42,8 @@ fn main() -> Result<()> {
 }
 
 fn copy_code() -> Result<()> {
-    let documents_folder = KnownFolders::DocumentsLibrary()?;
-    let save_folder = documents_folder
-        .GetFolderAsync("Warcraft III\\CustomMapData\\DRT1")?
-        .get()?;
-    let save_path = save_folder.Path()?.to_string();
-    let save_path = Path::new(&save_path);
+    let mut save_path = get_documents_folder()?;
+    save_path.push("Warcraft III\\CustomMapData\\DRT1");
     if !save_path.exists() {
         println!(
             "Save path \"{}\" does not exist!",
