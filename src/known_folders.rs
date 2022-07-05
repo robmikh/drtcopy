@@ -4,9 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use windows::{
-    core::Result,
+    core::{Result, PWSTR},
     Win32::{
-        Foundation::PWSTR,
         System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_INPROC_SERVER},
         UI::Shell::{FOLDERID_Documents, IKnownFolderManager, KnownFolderManager, KF_FLAG_DEFAULT},
     },

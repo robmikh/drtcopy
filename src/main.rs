@@ -1,4 +1,5 @@
 mod clipboard;
+mod handle;
 mod hotkey;
 mod known_folders;
 

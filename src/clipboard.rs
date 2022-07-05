@@ -1,5 +1,6 @@
+use crate::handle::CheckHandle;
 use windows::{
-    core::{Handle, Result},
+    core::Result,
     Win32::{
         Foundation::{HANDLE, HWND},
         System::{
